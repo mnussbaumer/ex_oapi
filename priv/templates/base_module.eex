@@ -1,0 +1,17 @@
+defmodule <%= @title %> do
+  @type default :: nil
+  <%= for %{name: name, verb: verb, path: path, base_url: base_url, op: op} = call <- @calls do %>
+      <%= ExOAPI.Generator.Helpers.build_docs_for_op(op) %>
+      @spec <%= name %>(<%= ExOAPI.Generator.Helpers.build_specs(call) %>) :: {:ok, any()} | {:error, any()}
+      def <%= name %>(<%= ExOAPI.Generator.Helpers.fun_args(call) %>) do
+      	      client
+	      |> ExOAPI.Client.set_module(__MODULE__)
+	      |> ExOAPI.Client.add_method(<%= ":#{verb}" %>)
+	      |> ExOAPI.Client.add_base_url("<%= base_url %>", :exoapi_default)
+	      |> ExOAPI.Client.add_path("<%= path %>")
+	      <%= ExOAPI.Generator.Helpers.client_body_funs(call) %>
+	      |> ExOAPI.Client.request()
+      end
+  <% end %>
+end
+

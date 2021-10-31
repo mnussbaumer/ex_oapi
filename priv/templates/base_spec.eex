@@ -1,0 +1,29 @@
+defmodule <%= @title %>.ExOAPI.Spec do
+  alias ExOAPI.Parser.V3.Context
+  
+  @spec path(String.t()) :: Context.Paths.t()
+  def path(path), do: spec().paths[path]
+  
+  @spec schemas() :: Context.Schema.Map.t()
+  def schemas(), do: spec().components.schemas
+
+  @spec spec() :: Contex.t()
+  def spec(), do: %Context{
+    openapi: <%= inspect(@ctx.openapi, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    paths: <%= inspect(@ctx.paths, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    security: <%= inspect(@ctx.security, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    info: <%= inspect(@ctx.info, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    servers: <%= inspect(@ctx.servers, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    components: %Context.Components{
+      schemas: <%= inspect(@ctx.components.schemas, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      responses: <%= inspect(@ctx.components.responses, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      parameters: <%= inspect(@ctx.components.parameters, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      examples: <%= inspect(@ctx.components.examples, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      request_bodies: <%= inspect(@ctx.components.request_bodies, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      headers: <%= inspect(@ctx.components.headers, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      security_schemes: <%= inspect(@ctx.components.security_schemes, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      links: <%= inspect(@ctx.components.links, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      callbacks: <%= inspect(@ctx.components.callbacks, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    }
+  }
+end

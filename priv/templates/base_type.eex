@@ -1,0 +1,23 @@
+defmodule <%= @schema_title %> do
+  use TypedEctoSchema
+  import Ecto.Changeset
+
+  @type params :: map()
+
+  @primary_key false
+  typed_embedded_schema do
+     <%= for {name, prop} <- @schema.properties do %>
+       <%= ExOAPI.Generator.Helpers.build_schema_field(prop, name, @schemas, @title) %>
+     <% end %>
+  end
+
+  @spec changeset(params()) :: Ecto.Changeset.t()
+  @spec changeset(__MODULE__.t(), params()) :: Ecto.Changeset.t()
+  def changeset(struct \\ %__MODULE__{}, params) do
+    struct
+    |> cast(params, <%= ExOAPI.Generator.Helpers.build_cast_array(@schema.properties, @schemas, @title) %>)
+    <%= ExOAPI.Generator.Helpers.build_validate_required(@schema.properties, @schemas, @title, @schema.required) %>
+    <%= ExOAPI.Generator.Helpers.build_cast_embeds(@schema.properties, @schemas, @title, @schema.required) %>
+  end
+
+end
