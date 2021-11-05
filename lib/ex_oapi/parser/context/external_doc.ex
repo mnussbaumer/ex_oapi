@@ -19,3 +19,11 @@ defmodule ExOAPI.Parser.V3.Context.ExternalDoc do
     |> cast(params, @list_of_fields)
   end
 end
+
+defimpl String.Chars, for: ExOAPI.Parser.V3.Context.ExternalDoc do
+  def to_string(%{description: description, url: url}) do
+    description = if(description, do: description, else: url)
+
+    "[#{description}](#{url})"
+  end
+end

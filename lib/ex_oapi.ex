@@ -15,10 +15,12 @@ defmodule ExOAPI do
     with source <- Map.get(opts, :source),
          {_, {:ok, output}} <- {:output, Map.fetch(opts, :output_path)},
          output_type <- Map.get(opts, :output_type, :modules),
+         title <- Map.get(opts, :title),
          parse_config <- Map.get(opts, :parser, %{}),
          gen_config <- Map.get(opts, :generator, %{}),
          gen_config <- Map.put(gen_config, :output_type, output_type),
          gen_config <- Map.put(gen_config, :output_path, output),
+         gen_config <- Map.put(gen_config, :title, title),
          {_, :ok} <- {:source, verify_file(source)} do
       parse_and_create(source, parse_config, gen_config)
     else
@@ -41,8 +43,12 @@ defmodule ExOAPI do
       |> ExOAPI.Parser.V3.Context.new()
       |> ExOAPI.Parser.V3.Context.map_cast(parsed)
       |> ExOAPI.Parser.V3.Context.maybe_add_skipped_schemas()
+      |> ExOAPI.Parser.V3.Context.normalize_all_ofs()
     end
   end
+
+  defp create(%ExOAPI.Parser.V3.Context{} = ctx, %{output_type: :app} = config),
+    do: ExOAPI.Generator.generate_app(ctx, config)
 
   defp create(%ExOAPI.Parser.V3.Context{} = ctx, config),
     do: ExOAPI.Generator.generate_templates(ctx, config)

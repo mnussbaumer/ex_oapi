@@ -7,6 +7,8 @@ defmodule ExOAPI.Client do
   inside the generated SDK functions.
   """
 
+  @parsable_response_type ["application/json", "text/json", "*/*"]
+
   defstruct [
     :method,
     :base_url,
@@ -91,13 +93,13 @@ defmodule ExOAPI.Client do
 
   def response_handler(
         {:ok, %Tesla.Env{body: body, status: status}},
-        %{path: path, module: module, method: method, outgoing_format: format} = _client
+        %{path: path, module: module, method: method} = _client
       ) do
     with spec_module <- Module.concat(module, ExOAPI.Spec),
          {_, %Context{} = spec} <- {:spec, spec_module.spec()},
          {_, %Context.Paths{} = path_def} <- {:path, Map.get(spec.paths, path)},
          {_, %Operation{responses: resp_spec}} <- {:req, Map.get(path_def, method)} do
-      maybe_convert_response("#{status}", body, resp_spec, spec, format, module)
+      maybe_convert_response("#{status}", body, resp_spec, spec, spec_module)
     else
       _ -> {:ok, body}
     end
@@ -105,30 +107,213 @@ defmodule ExOAPI.Client do
 
   def response_handler(response, _client), do: response
 
-  defp maybe_convert_response(status, body, resp_spec, spec, format, module)
+  defp maybe_convert_response(status, body, resp_spec, spec, module)
        when is_map_key(resp_spec, status) or is_map_key(resp_spec, "default") do
     Map.get(resp_spec, status, Map.get(resp_spec, "default"))
     |> case do
-      %Context.Response{content: format_spec} when is_map_key(format_spec, format) ->
-        __MODULE__.Responses.convert_response(body, Map.get(format_spec, format), spec, module)
+      %Context.Response{content: format_spec} ->
+        Enum.reduce_while(@parsable_response_type, {:ok, body}, fn format, acc ->
+          case Map.get(format_spec, format) do
+            nil ->
+              {:cont, acc}
 
-      _ ->
+            resp_spec ->
+              {:halt, __MODULE__.Responses.convert_response(body, resp_spec, spec, module)}
+          end
+        end)
+
+      _error ->
         {:ok, body}
     end
   end
 
-  defp maybe_convert_response(_, body, _, _, _, _), do: {:ok, body}
+  defp maybe_convert_response(_, body, _, _, _), do: {:ok, body}
 
-  @path_regex ~r/\((?<regex_start>.+)\{(?<replacement>.+)\}(?<regex_end>.+)\)(\/|$)|\{(?<only_interpolation>.+)\}(\/|$)/u
+  @path_regex ~r/\((?<regex_start>.+?)(?<replacement>\{.+?\})(?<regex_end>.+?)\)(?:\/|$)|(?<only_interpolation>\{.+?\})(?:\/|$)/u
   def replace_path_fragments(replacements, url) do
     Regex.scan(@path_regex, url)
     |> Enum.reduce(url, fn
-      [_, "", "", "", "", key, _], acc ->
-        String.replace(acc, "{#{key}}", Map.fetch!(replacements, key))
+      [_, "", "", "", key], acc ->
+        {_, value} = Enum.find(replacements, fn {k, _v} -> "{#{k}}" == key end)
+        String.replace(acc, key, value)
 
-      [special, _regex_type, key, _regex_spec, delimiter], acc ->
-        String.replace(acc, special, Map.fetch!(replacements, key) <> delimiter)
+      [special, _regex_type, key, _regex_spec], acc ->
+        {_, value} = Enum.find(replacements, fn {k, _v} -> "{#{k}}" == key end)
+        String.replace(acc, special, value)
     end)
+  end
+
+  def add_arg_opts(client, type, in_type, opts, args) do
+    Enum.reduce(args, client, fn {opt, name, style, explode}, acc ->
+      value = get_arg_value(type, opts, opt)
+
+      case build_arg_value(name, value, style, explode, in_type) do
+        {:normal, prepared_value} ->
+          add_arg_to_client(acc, type, name, prepared_value)
+
+        {:explode, prepared_value} ->
+          Enum.reduce(prepared_value, acc, fn {k, v}, acc_1 ->
+            add_arg_to_client(acc_1, type, k, v)
+          end)
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  defp get_arg_value(:keyword, opts, opt), do: Keyword.get(opts, opt)
+  defp get_arg_value(:map, opts, opt), do: Map.get(opts, opt)
+
+  defp build_arg_value(name, value, style, false, in_type) when is_list(value) do
+    case style do
+      :matrix ->
+        {:normal, ";#{name}=#{Enum.join(value, ",")}"}
+
+      _ when style in [:form, :simple] and in_type == :query ->
+        {:normal, "#{Enum.join(value, ",")}"}
+
+      _ when style in [:form, :simple] ->
+        {:normal, "#{name}=#{Enum.join(value, ",")}"}
+
+      :label ->
+        {:normal, ".#{Enum.join(value, ".")}"}
+
+      _ ->
+        {:normal, value}
+    end
+  end
+
+  defp build_arg_value(name, value, style, true, in_type) when is_list(value) do
+    case style do
+      :matrix ->
+        {
+          :normal,
+          Enum.map(value, fn v -> ";#{name}=#{v}" end) |> Enum.join()
+        }
+
+      _ when style in [:form, :simple] and in_type == :query ->
+        {:normal, value}
+
+      :form ->
+        {:normal, "#{name}=#{Enum.join(value, ",")}"}
+
+      :simple ->
+        {:normal, Enum.join(value, ",")}
+
+      :label ->
+        {:normal, ".#{Enum.join(value, ".")}"}
+
+      :spaceDelimited ->
+        {:normal, "#{Enum.join(value, "%20")}"}
+
+      :pipeDelimited ->
+        {:normal, "#{Enum.join(value, "|")}"}
+
+      _ ->
+        {:normal, value}
+    end
+  end
+
+  defp build_arg_value(name, value, style, false, in_type) when is_map(value) do
+    case style do
+      :matrix ->
+        {:normal,
+         ";#{name}=" <>
+           (Enum.reduce(value, [], fn {k, v}, acc -> [v, k | acc] end)
+            |> Enum.reverse()
+            |> Enum.join(","))}
+
+      _ when style in [:form, :simple] and in_type == :query ->
+        {:normal,
+         Enum.reduce(value, [], fn {k, v}, acc -> [v, k | acc] end)
+         |> Enum.reverse()
+         |> Enum.join(",")}
+
+      :form ->
+        {:normal,
+         "#{name}=" <>
+           (Enum.reduce(value, [], fn {k, v}, acc -> [v, k | acc] end)
+            |> Enum.reverse()
+            |> Enum.join(","))}
+
+      :simple ->
+        {:normal,
+         Enum.reduce(value, [], fn {k, v}, acc -> [v, k | acc] end)
+         |> Enum.reverse()
+         |> Enum.join(",")}
+
+      :label ->
+        {:normal,
+         Enum.reduce(value, ["."], fn {k, v}, acc -> [v, k | acc] end)
+         |> Enum.reverse()
+         |> Enum.join(".")}
+
+      value ->
+        {:normal, value}
+    end
+  end
+
+  defp build_arg_value(name, value, style, true, in_type) when is_map(value) do
+    case style do
+      :matrix ->
+        {:normal,
+         ";" <>
+           (Enum.reduce(value, [], fn {k, v}, acc -> [v, "#{k}=" | acc] end)
+            |> Enum.reverse()
+            |> Enum.join(";"))}
+
+      :form when in_type == :query ->
+        {:explode, value}
+
+      :form ->
+        {:normal,
+         Enum.reduce(value, [], fn {k, v}, acc -> [v, "#{k}=" | acc] end)
+         |> Enum.reverse()
+         |> Enum.join("&")}
+
+      :simple ->
+        {:normal,
+         Enum.reduce(value, [], fn {k, v}, acc -> [v, "#{k}=" | acc] end)
+         |> Enum.reverse()
+         |> Enum.join(",")}
+
+      :label ->
+        {:normal,
+         "." <>
+           (Enum.map(value, fn {k, v} -> "#{k}=#{v}" end)
+            |> Enum.join("."))}
+
+      :spaceDelimited ->
+        {
+          :normal,
+          Enum.map(value, fn {k, v} -> "#{k}%20#{v}" end)
+          |> Enum.join("%20")
+        }
+
+      :pipeDelimited ->
+        {
+          :normal,
+          Enum.map(value, fn {k, v} -> "#{k}|#{v}" end)
+          |> Enum.join("|")
+        }
+
+      :deepObject ->
+        {:explode, Enum.map(value, fn {k, v} -> {"#{name}[#{k}]", v} end)}
+
+      value ->
+        value
+    end
+  end
+
+  defp build_arg_value(_name, value, _style, _explode, _in_type), do: value
+
+  def add_arg_to_client(client, type, name, prepared_value) do
+    case type do
+      :header -> add_header(client, name, prepared_value)
+      :query -> add_query(client, name, prepared_value)
+      :path -> replace_in_path(client, name, prepared_value)
+    end
   end
 
   @doc """

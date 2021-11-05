@@ -40,7 +40,7 @@ defmodule ExOAPI.MixProject do
   defp deps,
     do: [
       {:ecto, "~> 3.7.0"},
-      {:typed_ecto_schema, "~> 0.3", runtime: false},
+      {:typed_ecto_schema, "~> 0.3"},
       {:tesla, "~> 1.4"},
       {:jason, "~> 1.2"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},

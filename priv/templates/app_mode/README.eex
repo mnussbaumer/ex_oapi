@@ -1,0 +1,24 @@
+# Elixir SDK Library for <%= @title %>, generated through ExOAPI.
+
+<%= if @info.title, do: "## #{@info.title}" %>
+<br/>
+<%= if @info.description, do: inspect(@info.description, limit: :infinity, printable_limit: :infinity) %>
+<br/>
+**TODO: Add description**
+
+## Installation
+
+If [available in Hex](https://hex.pm/docs/publish), the package can be installed
+by adding `<%= @app_name %>` to your list of dependencies in `mix.exs`:
+
+```elixir
+def deps do
+  [
+    {<%= @app_name %>, "~> 0.1.0"}
+  ]
+end
+```
+
+Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
+and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
+be found at [https://hexdocs.pm/exoapi](https://hexdocs.pm/exoapi).

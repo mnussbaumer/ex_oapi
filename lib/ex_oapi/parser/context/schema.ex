@@ -65,9 +65,9 @@ defmodule ExOAPI.Parser.V3.Context.Schema do
     field(:field_name, ExOAPI.EctoTypes.FieldAtom)
     field(:multiple_of, :integer)
     field(:maximum, :integer)
-    field(:exclusive_maximum, :integer)
+    field(:exclusive_maximum, :boolean, default: false)
     field(:minimum, :integer)
-    field(:exclusive_minimum, :integer)
+    field(:exclusive_minimum, :boolean, default: false)
     field(:max_length, :integer)
     field(:min_length, :integer)
     field(:pattern, :string)
@@ -78,7 +78,7 @@ defmodule ExOAPI.Parser.V3.Context.Schema do
     field(:min_properties, :integer)
     field(:required, {:array, ExOAPI.EctoTypes.FieldAtom})
     field(:enum, {:array, :string})
-    field(:type, :string)
+    field(:type, ExOAPI.EctoTypes.SchemaType)
 
     field(:properties, Context.Schema.Map)
 

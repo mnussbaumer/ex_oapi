@@ -12,19 +12,21 @@ defmodule ExOAPI.Generator.Paths do
     embeds_many(:calls, Call)
   end
 
-  def new(path, %Context{paths: paths} = ctx) do
+  def new(path, %Context{paths: paths} = ctx, acc) do
     paths
     |> Map.get(path)
-    |> build_path_calls(path, ctx)
+    |> build_path_calls(path, ctx, acc)
   end
 
-  def build_path_calls(path_definition, path, ctx) do
-    Enum.reduce(@verbs, [], fn verb, acc ->
+  def build_path_calls(path_definition, path, ctx, acc) do
+    Enum.reduce(@verbs, acc, fn verb, acc ->
       case Call.new(verb, path, path_definition, ctx) do
-        nil -> acc
-        path_call -> [path_call | acc]
+        nil ->
+          acc
+
+        %{module: module, module_path: module_path} = path_call ->
+          Map.update(acc, [module, module_path], [path_call], fn prev -> [path_call | prev] end)
       end
     end)
-    |> Enum.reverse()
   end
 end

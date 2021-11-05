@@ -4,6 +4,8 @@ defmodule <%= @schema_title %> do
 
   @type params :: map()
 
+  <%= ExOAPI.Generator.Helpers.build_docs_for_schema(@schema, @schemas, @title) %>
+
   @primary_key false
   typed_embedded_schema do
      <%= for {name, prop} <- @schema.properties do %>

@@ -9,6 +9,8 @@ defmodule ExOAPI.Generator.Paths.Call do
   typed_embedded_schema do
     field(:verb, :string)
     field(:name, :string)
+    field(:module, :string)
+    field(:module_path, :string)
     field(:required_args, {:array, :map})
     field(:optional_args, {:array, :map})
     field(:path, :string)
@@ -22,10 +24,9 @@ defmodule ExOAPI.Generator.Paths.Call do
       nil ->
         nil
 
-      %Operation{operation_id: op_id} = op ->
-        IO.inspect(fn_name: op.fn_name, module: op.module_path)
+      %Operation{fn_name: fn_name, module: module, module_path: module_path} = op ->
         op = maybe_merge_params(op, paths)
-        op_id = Macro.underscore(op_id) |> String.split("_", trim: true) |> Enum.join("_")
+
         {required_args, optional_args} = build_args(op)
         security_args = extract_security_args(op, ctx)
 
@@ -41,8 +42,10 @@ defmodule ExOAPI.Generator.Paths.Call do
 
         %__MODULE__{
           verb: verb,
-          name: op_id,
+          name: fn_name,
           path: path,
+          module: module,
+          module_path: module_path,
           base_url: base_url,
           required_args: final_required_args,
           optional_args: final_optional_args,
@@ -78,10 +81,17 @@ defmodule ExOAPI.Generator.Paths.Call do
     end)
   end
 
-  def make_param(%Parameters{required: req, in: in_type, name: name, schema: _schema}) do
+  def make_param(%Parameters{
+        required: req,
+        in: in_type,
+        name: name,
+        schema: _schema,
+        explode: explode,
+        style: style
+      }) do
     {
       if(req, do: :required, else: :optional),
-      %{name: name, in: in_type, arg_form: make_safe_arg(name)}
+      %{name: name, in: in_type, arg_form: make_safe_arg(name), explode: explode, style: style}
     }
   end
 
@@ -122,7 +132,7 @@ defmodule ExOAPI.Generator.Paths.Call do
   end
 
   def is_security_arg?(%Context.Security{in: in_type}),
-    do: in_type in ["header", "query"]
+    do: in_type in [:header, :query]
 
   def maybe_add_body_arg(required_args, %Operation{request_body: nil}, _),
     do: required_args
@@ -145,6 +155,18 @@ defmodule ExOAPI.Generator.Paths.Call do
 
       %{"multipart/form-data" => %Context.Media{} = media} ->
         [%{body: make_body_arg(media, ctx), in: :body} | required_args]
+
+      %{"application/octet-stream" => %Context.Media{} = media} ->
+        [%{body: make_body_arg(media, ctx), in: :body} | required_args]
+
+      content ->
+        Enum.reduce_while(content, required_args, fn
+          {_k, %Context.Media{} = media}, _acc ->
+            {:halt, [%{body: make_body_arg(media, ctx), in: :body} | required_args]}
+
+          _, acc ->
+            {:cont, acc}
+        end)
     end
   end
 

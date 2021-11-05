@@ -28,7 +28,7 @@ defmodule ExOAPI.Parser.V3.Context.Security do
     field(:type, ExOAPI.EctoTypes.Security, null: false)
     field(:description, :string)
     field(:name, :string)
-    field(:in, :string)
+    field(:in, ExOAPI.EctoTypes.ParameterIn)
     field(:scheme, :string)
     field(:bearer_format, :string)
     field(:flows, :map)

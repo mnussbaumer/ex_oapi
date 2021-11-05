@@ -2,6 +2,8 @@ defmodule ExOAPI.Parser.V3.Context do
   use TypedEctoSchema
   import Ecto.Changeset
 
+  alias __MODULE__.Schema
+
   @list_of_fields [
     :openapi,
     :paths,
@@ -92,7 +94,7 @@ defmodule ExOAPI.Parser.V3.Context do
           _ ->
             Enum.reduce(skipped, context, fn {skipped, schema}, acc ->
               if Map.get(schemas, skipped) do
-                case __MODULE__.Schema.maybe_schema(schema, nil, skipped) do
+                case Schema.maybe_schema(schema, nil, skipped) do
                   {:ok, schema} ->
                     __MODULE__.Components.add_to_schemas(skipped, schema, acc)
 
@@ -117,6 +119,93 @@ defmodule ExOAPI.Parser.V3.Context do
     |> cast_embed(:components, with: &__MODULE__.Components.map_cast/2)
     |> validate_required(@list_of_fields)
     |> apply_action(:insert)
+  end
+
+  def normalize_all_ofs({:ok, %__MODULE__{} = ctx}), do: normalize_all_ofs(ctx)
+
+  def normalize_all_ofs(
+        %__MODULE__{
+          components:
+            %__MODULE__.Components{
+              schemas: schemas
+            } = components
+        } = ctx
+      ) do
+    {:ok,
+     %__MODULE__{
+       ctx
+       | components: %__MODULE__.Components{
+           components
+           | schemas:
+               Enum.reduce(schemas, schemas, fn {identifier, schema}, acc ->
+                 normalized = normalize_all_of(schema, ctx, identifier)
+                 Map.put(acc, identifier, normalized)
+               end)
+         }
+     }}
+  end
+
+  def normalize_all_of(schema, ctx, identifier \\ nil)
+
+  def normalize_all_of(%Schema{all_of: []} = schema, _, _),
+    do: schema
+
+  def normalize_all_of(%Schema{all_of: all_of}, ctx, identifier) do
+    {required, properties} =
+      Enum.reduce(all_of, {[], %{}}, fn schema, {req, props} ->
+        schema
+        |> maybe_extract_ref(ctx)
+        |> normalize_all_of(ctx)
+        |> extract_all_of_details(ctx, req, props)
+      end)
+
+    %Schema{title: identifier, properties: properties, required: required, type: :object}
+  end
+
+  def maybe_extract_ref(%Schema{ref: nil} = schema, _), do: schema
+
+  def maybe_extract_ref(%Schema{ref: ref}, ctx) do
+    case ExOAPI.Generator.Helpers.extract_ref(ref, ctx, %{}) do
+      %Schema{} = schema -> schema
+    end
+  end
+
+  def extract_all_of_details(
+        %Schema{ref: nil, items: nil, required: required, properties: %{} = properties},
+        ctx,
+        req,
+        props
+      ) do
+    new_required = if(required, do: req ++ required, else: req)
+
+    new_props =
+      Enum.reduce(properties, %{}, fn {k, v}, acc ->
+        Map.put(acc, k, normalize_all_of(v, ctx, %{}))
+      end)
+
+    {new_required, Map.merge(props, new_props)}
+  end
+
+  def extract_all_of_details(
+        %Schema{ref: nil, items: nil, properties: nil},
+        _ctx,
+        req,
+        props
+      ) do
+    {req, props}
+  end
+
+  def extract_all_of_details(
+        %Schema{ref: ref},
+        ctx,
+        req,
+        props
+      )
+      when is_binary(ref) do
+    case ExOAPI.Generator.Helpers.extract_ref(ref, ctx, %{}) do
+      %Schema{} = schema ->
+        extract_all_of_details(schema, ctx, req, props)
+    end
   end
 
   def normalize_schemas({:ok, %__MODULE__{} = ctx}),
@@ -144,12 +233,12 @@ defmodule ExOAPI.Parser.V3.Context do
      }}
   end
 
-  def normalize_schema(%__MODULE__.Schema{ref: nil} = schema, ctx, identifiers),
+  def normalize_schema(%Schema{ref: nil} = schema, ctx, identifiers),
     do: maybe_normalize_properties(schema, ctx, identifiers)
 
-  def normalize_schema(%__MODULE__.Schema{ref: ref}, ctx, identifiers) do
+  def normalize_schema(%Schema{ref: ref}, ctx, identifiers) do
     case ExOAPI.Generator.Helpers.extract_ref(ref, ctx, identifiers) do
-      %__MODULE__.Schema{ref: ^ref} = schema ->
+      %Schema{ref: ^ref} = schema ->
         schema
 
       schema ->
@@ -157,10 +246,10 @@ defmodule ExOAPI.Parser.V3.Context do
     end
   end
 
-  def maybe_normalize_properties(%__MODULE__.Schema{properties: nil} = schema, ctx, identifiers),
+  def maybe_normalize_properties(%Schema{properties: nil} = schema, ctx, identifiers),
     do: maybe_normalize_items(schema, ctx, identifiers)
 
-  def maybe_normalize_properties(%__MODULE__.Schema{properties: props} = schema, ctx, identifiers) do
+  def maybe_normalize_properties(%Schema{properties: props} = schema, ctx, identifiers) do
     {new_properties, new_identifiers} =
       Enum.reduce(props, {props, identifiers}, fn {identifier, schema}, {acc, new_identifiers} ->
         case Map.get(new_identifiers, identifier) do
@@ -174,38 +263,38 @@ defmodule ExOAPI.Parser.V3.Context do
         end
       end)
 
-    %__MODULE__.Schema{schema | properties: new_properties}
+    %Schema{schema | properties: new_properties}
     |> maybe_normalize_items(ctx, new_identifiers)
   end
 
-  def maybe_normalize_items(%__MODULE__.Schema{items: nil} = schema, _, _),
+  def maybe_normalize_items(%Schema{items: nil} = schema, _, _),
     do: schema
 
   def maybe_normalize_items(
-        %__MODULE__.Schema{items: %__MODULE__.Schema{ref: nil} = item} = schema,
+        %Schema{items: %Schema{ref: nil} = item} = schema,
         ctx,
         identifiers
       ) do
-    %__MODULE__.Schema{
+    %Schema{
       schema
       | items: normalize_schema(item, ctx, identifiers)
     }
   end
 
   def maybe_normalize_items(
-        %__MODULE__.Schema{items: %__MODULE__.Schema{ref: ref}} = schema,
+        %Schema{items: %Schema{ref: ref}} = schema,
         ctx,
         identifiers
       ) do
     case ExOAPI.Generator.Helpers.extract_ref(ref, ctx, identifiers) do
-      %__MODULE__.Schema{ref: ^ref} = item ->
-        %__MODULE__.Schema{
+      %Schema{ref: ^ref} = item ->
+        %Schema{
           schema
           | items: item
         }
 
       item ->
-        %__MODULE__.Schema{
+        %Schema{
           schema
           | items: normalize_schema(item, ctx, identifiers)
         }

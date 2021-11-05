@@ -1,0 +1,42 @@
+defmodule <%= @title %>.MixProject do
+  use Mix.Project
+
+  def project do
+    [
+      app: <%= @app_name %>,
+      version: "<%= @app_version %>",
+      elixir: "<%= @elixir_version %>",
+      start_permanent: Mix.env() == :prod,
+      deps: deps(),
+      source_url: "https://github.com/mnussbaumer/ex_oapi",
+      homepage_url: "https://hexdocs.pm/ex_oapi/readme.html",
+      description: ~s(<%= @description %>),
+      package: [
+        licenses: ["MIT"],
+	exclude_patterns: [~r/.*~$/, ~r/#.*#$/],
+	links: %{
+	  "github/readme" => "https://github.com/mnussbaumer/ex_oapi"
+	}
+      ],
+      docs: [
+      	main: "<%= @title %>",
+	extras: ["README.md"],
+        nest_modules_by_prefix: [
+	  <%= @schemas_title %>,
+	  <%= @sdk_title %>
+	]
+      ]
+    ]
+  end
+
+  def application, do: [extra_applications: [:logger]]
+
+  defp deps do
+    [
+      {:ex_oapi, "~> 0.1"},
+      {:ex_doc, "~> 0.24", only: :dev, runtime: false}
+    ]
+  end
+
+  
+end

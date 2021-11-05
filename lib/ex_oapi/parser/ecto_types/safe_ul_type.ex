@@ -11,7 +11,7 @@ defmodule ExOAPI.EctoTypes.SafeUL do
 
   @impl Ecto.Type
   def cast(data) when is_binary(data) do
-    with data <- String.downcase(data),
+    with data <- Macro.underscore(data),
          {:ok, data} <- ExOAPI.EctoTypes.Underscore.cast(data) do
       {:ok, data}
     end

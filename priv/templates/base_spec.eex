@@ -1,5 +1,8 @@
 defmodule <%= @title %>.ExOAPI.Spec do
   alias ExOAPI.Parser.V3.Context
+
+  @spec schemas_title() :: module()
+  def schemas_title(), do: <%= @schemas_title %>
   
   @spec path(String.t()) :: Context.Paths.t()
   def path(path), do: spec().paths[path]
@@ -7,7 +10,7 @@ defmodule <%= @title %>.ExOAPI.Spec do
   @spec schemas() :: Context.Schema.Map.t()
   def schemas(), do: spec().components.schemas
 
-  @spec spec() :: Contex.t()
+  @spec spec() :: Context.t()
   def spec(), do: %Context{
     openapi: <%= inspect(@ctx.openapi, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
     paths: <%= inspect(@ctx.paths, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,

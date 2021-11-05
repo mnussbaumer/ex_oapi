@@ -32,8 +32,9 @@ defmodule ExOAPI.Parser.V3.Context.Operation do
     field(:summary, :string)
     field(:description, :string)
     field(:operation_id, ExOAPI.EctoTypes.Underscore)
-    field(:operation_id_original, ExOAPI.EctoTypes.Underscore)
-    field(:module_path, {:array, :string})
+    field(:operation_id_original, :string)
+    field(:module_path, ExOAPI.EctoTypes.Underscore)
+    field(:module, :string)
     field(:fn_name, :string)
     field(:deprecated, :boolean, default: false)
     field(:security, {:array, ExOAPI.EctoTypes.SecurityEntry})
@@ -69,25 +70,44 @@ defmodule ExOAPI.Parser.V3.Context.Operation do
   defp do_user_transform(changeset, _transform), do: changeset
 
   defp do_base_transform(changeset) do
-    op_id = get_change(changeset, :operation_id_original)
+    op_id_original = get_change(changeset, :operation_id_original)
     tags = get_change(changeset, :tags)
 
+    tags_for_substitution =
+      tags
+      |> Enum.map(fn tag -> ExOAPI.EctoTypes.Underscore.cast!(tag) end)
+
     op_id =
-      String.split(op_id)
+      op_id_original
+      |> ExOAPI.EctoTypes.Underscore.cast!()
+      |> String.split()
       |> Enum.join("_")
 
-    tags = Enum.sort(tags)
-
     fun_name =
-      Enum.reduce(tags, op_id, fn tag, acc ->
+      Enum.reduce(tags_for_substitution, op_id, fn tag, acc ->
         acc
         |> String.replace(~r/^#{tag}/i, "", global: false)
         |> String.replace_leading("_", "")
       end)
       |> Macro.underscore()
+      |> String.replace(~r/\_{2,}/, "_")
+
+    module =
+      tags_for_substitution
+      |> ExOAPI.Generator.Helpers.camelize_items()
+      |> Enum.join(".")
+
+    module_path =
+      tags_for_substitution
+      |> Enum.map(fn tag ->
+        tag
+        |> Macro.underscore()
+        |> String.downcase()
+      end)
 
     changeset
     |> put_change(:fn_name, fun_name)
-    |> put_change(:module_path, ExOAPI.Generator.Helpers.camelize_items(tags))
+    |> put_change(:module, module)
+    |> put_change(:module_path, module_path)
   end
 end

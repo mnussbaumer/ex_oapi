@@ -3,38 +3,38 @@ defmodule ExOAPI.Client.Responses do
   alias Context.{Schema, Media}
   alias ExOAPI.Generator.Helpers
 
-  def convert_response(body, %Media{schema: schema}, spec, module),
-    do: do_conversion(body, schema, spec, module)
+  def convert_response(body, %Media{schema: schema}, spec, spec_module),
+    do: {:ok, do_conversion(body, schema, spec, spec_module)}
 
-  def convert_response(body, _, _spec, _module),
+  def convert_response(body, _, _spec, _spec_module),
     do: {:ok, body}
 
   def do_conversion(
         value,
-        %Schema{type: "object", ref: nil, properties: properties},
+        %Schema{type: :object, ref: nil, properties: properties},
         spec,
-        module
+        spec_module
       )
       when is_map(value) and is_map(properties) do
     Enum.reduce(value, value, fn {k, v}, acc ->
       prop = Map.get(properties, k)
-      Map.put(acc, k, do_conversion(v, prop, spec, module))
+      Map.put(acc, k, do_conversion(v, prop, spec, spec_module))
     end)
   end
 
   def do_conversion(
         value,
-        %Schema{type: "array", ref: nil, items: item},
+        %Schema{type: :array, ref: nil, items: item},
         spec,
-        module
+        spec_module
       )
       when is_list(value) and not is_nil(item) do
-    Enum.map(value, fn value_item -> do_conversion(value_item, item, spec, module) end)
+    Enum.map(value, fn value_item -> do_conversion(value_item, item, spec, spec_module) end)
   end
 
-  def do_conversion(value, %Schema{ref: ref}, spec, module) when not is_nil(ref) do
+  def do_conversion(value, %Schema{ref: ref}, spec, spec_module) when not is_nil(ref) do
     with %Context.Schema{title: title} <- Helpers.extract_ref(ref, spec),
-         schema_module <- Module.concat(module, title),
+         schema_module <- Module.concat(spec_module.schemas_title(), Macro.camelize(title)),
          {:module, _} <- Code.ensure_loaded(schema_module),
          true <- function_exported?(schema_module, :changeset, 2) do
       value
@@ -48,7 +48,8 @@ defmodule ExOAPI.Client.Responses do
           value
       end
     else
-      _what -> value
+      _what ->
+        value
     end
   end
 

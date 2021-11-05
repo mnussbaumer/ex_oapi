@@ -11,7 +11,7 @@ defmodule ExOAPI.EctoTypes.Underscore do
 
   @impl Ecto.Type
   def cast(data) when is_binary(data) do
-    replaced = String.replace(data, ~r/[\-\s]/, "_")
+    replaced = String.replace(data, ~r/[\-\s\.]/, "_")
     {:ok, replaced}
   end
 
