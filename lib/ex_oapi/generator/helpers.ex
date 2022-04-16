@@ -164,12 +164,13 @@ defmodule ExOAPI.Generator.Helpers do
 
   def add_type_param(%{in: :body, body: body}, _, ctx, base_title) do
     type =
-      with true <- is_map(body),
+      with {_, true} <- {:is_map, is_map(body)},
            schema_title when is_binary(schema_title) <- Map.get(body, :title),
            %Context.Schema{} <- Map.get(ctx.components.schemas, schema_title) do
         "#{join(base_title, safe_mod_split(schema_title))}.t() | map()"
       else
-        _ -> "any()"
+        {:is_map, _} -> "any()"
+        _ -> "map()"
       end
 
     "body :: #{type}"
@@ -284,6 +285,12 @@ defmodule ExOAPI.Generator.Helpers do
           {:array, _type} ->
             [", ", name | acc]
 
+          {:array, :any_of, _} ->
+            [", ", name | acc]
+
+          {:any_of, _} ->
+            [", ", name | acc]
+
           _ ->
             acc
         end
@@ -304,6 +311,12 @@ defmodule ExOAPI.Generator.Helpers do
 
           {:type, _type} ->
             [", ", build_atom(name) | acc]
+
+          {:array, :any_of, _} ->
+            [", ", name | acc]
+
+          {:any_of, _} ->
+            [", ", name | acc]
 
           _ ->
             acc
@@ -343,7 +356,19 @@ defmodule ExOAPI.Generator.Helpers do
               _ -> acc
             end
 
+          {:array, :any_of, _} ->
+            case is_required?(field_name, required) do
+              true -> [", ", field_name | acc]
+              _ -> acc
+            end
+
           {:array, _type} ->
+            case is_required?(field_name, required) do
+              true -> [", ", field_name | acc]
+              _ -> acc
+            end
+
+          {:any_of, _type} ->
             case is_required?(field_name, required) do
               true -> [", ", field_name | acc]
               _ -> acc
@@ -368,6 +393,9 @@ defmodule ExOAPI.Generator.Helpers do
               {:array, :enum, _} ->
                 [", ", field_name | acc]
 
+              {:array, :any_of, _} ->
+                [", ", field_name | acc]
+
               {:array, _type} ->
                 [", ", field_name | acc]
 
@@ -375,6 +403,9 @@ defmodule ExOAPI.Generator.Helpers do
                 [", ", field_name | acc]
 
               {:type, _type} ->
+                [", ", field_name | acc]
+
+              {:any_of, _type} ->
                 [", ", field_name | acc]
 
               _ ->
@@ -413,6 +444,9 @@ defmodule ExOAPI.Generator.Helpers do
           {:array, _type} ->
             acc
 
+          {:any_of, _} ->
+            acc
+
           _ ->
             [
               "|> cast_embed(#{field_name}#{maybe_required_embed(field_name, required)})"
@@ -427,6 +461,9 @@ defmodule ExOAPI.Generator.Helpers do
             acc
 
           {:array, _type} ->
+            acc
+
+          {:any_of, _} ->
             acc
 
           {embeds, _type} when embeds in [:embeds_one, :embeds_many] ->
@@ -547,9 +584,51 @@ defmodule ExOAPI.Generator.Helpers do
       {:enum, enum} ->
         "field #{field_name}, Ecto.Enum, values: #{enum}"
 
+      {:any_of, types} ->
+        "field #{field_name}, {:array, ExOAPI.EctoTypes.AnyOf}, types: #{inspect(types)}"
+
       _error ->
         ""
     end
+  end
+
+  def build_schema_field(
+        %Context.Schema{any_of: [_ | _] = any_of, field_name: field_name},
+        name,
+        schemas,
+        base_title
+      ) do
+    final_name = field_name || name
+
+    final_types =
+      Enum.reduce(any_of, [], fn any, acc ->
+        [
+          case type_of_schema(any, schemas, base_title) do
+            {:array, :enum, enum} ->
+              {:enum, enum}
+
+            {:enum, enum} ->
+              {:enum, enum}
+
+            {:array, ":" <> type} ->
+              String.to_atom(type)
+
+            {:embeds_many, type} ->
+              Module.concat([type])
+
+            {:embeds_one, type} ->
+              Module.concat([type])
+
+            {:type, ":" <> type} ->
+              String.to_existing_atom(type)
+          end
+          | acc
+        ]
+      end)
+      |> Enum.uniq()
+      |> Enum.reverse()
+
+    "field #{final_name}, ExOAPI.EctoTypes.AnyOf, types: #{inspect(final_types)}"
   end
 
   def build_schema_field(
@@ -584,13 +663,65 @@ defmodule ExOAPI.Generator.Helpers do
   end
 
   def type_of_schema(
+        %Context.Schema{type: :array, items: %Context.Schema{} = schema},
+        schemas,
+        base_title
+      ) do
+    case type_of_schema(schema, schemas, base_title) do
+      {:embeds_one, embed} -> {:embeds_many, embed}
+      {:array, _} = type -> {:array, type}
+      {:type, type} -> {:array, type}
+      {:enum, enum} -> {:array, :enum, enum}
+      {:any_of, types} -> {:array, :any_of, types}
+    end
+  end
+
+  def type_of_schema(
+        %Context.Schema{any_of: [_ | _] = any_of},
+        schemas,
+        base_title
+      ) do
+    final_schemas =
+      Enum.reduce(any_of, [], fn any, acc ->
+        [
+          case type_of_schema(any, schemas, base_title) do
+            {:array, :enum, enum} ->
+              {:enum, enum}
+
+            {:enum, enum} ->
+              {:enum, enum}
+
+            {:array, ":" <> type} ->
+              String.to_atom(type)
+
+            {:embeds_many, type} ->
+              Module.concat([type])
+
+            {:embeds_one, type} ->
+              Module.concat([type])
+
+            {:type, ":" <> type} ->
+              String.to_existing_atom(type)
+          end
+          | acc
+        ]
+      end)
+      |> Enum.uniq()
+
+    {:any_of, final_schemas}
+  end
+
+  def type_of_schema(
         %Context.Schema{title: title, type: type, format: format, ref: nil},
         schemas,
         base_title
       ) do
     case Map.get(schemas, title) do
       nil ->
-        {:array, get_type(type, format)}
+        case get_type(type, format) do
+          :error -> :error
+          type -> {:type, type}
+        end
 
       %Context.Schema{type: :array} ->
         {:embeds_many, "#{join(base_title, safe_mod_split(title))}"}
@@ -608,7 +739,8 @@ defmodule ExOAPI.Generator.Helpers do
         %Context.Schema{ref: ref},
         schemas,
         base_title
-      ) do
+      )
+      when is_binary(ref) do
     case Map.get(schemas, extract_schema_ref(ref)) do
       nil ->
         :error
@@ -619,6 +751,7 @@ defmodule ExOAPI.Generator.Helpers do
           {:array, _} = type -> type
           {:type, type} -> {:array, type}
           {:enum, enum} -> {:array, :enum, enum}
+          {:any_of, types} -> {:array, :any_of, types}
         end
 
       %Context.Schema{type: :object, properties: properties}
@@ -781,6 +914,14 @@ defmodule ExOAPI.Generator.Helpers do
         {:array, :enum, enum} ->
           "list(#{enum})"
 
+        {:array, :any_of, types} ->
+          stringed =
+            types
+            |> Enum.map(&"#{inspect(&1)}")
+            |> Enum.join(" | ")
+
+          "list(#{stringed})"
+
         {:array, type} ->
           "list(#{type})"
 
@@ -795,6 +936,11 @@ defmodule ExOAPI.Generator.Helpers do
 
         {:type, type} ->
           type
+
+        {:any_of, types} ->
+          types
+          |> Enum.map(&"#{inspect(&1)}")
+          |> Enum.join(" | ")
 
         :error ->
           "unknown - not defined on the open api spec"

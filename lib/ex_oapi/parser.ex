@@ -4,6 +4,7 @@ defmodule ExOAPI.Parser do
   """
 
   def ex_oapi_paths(), do: :ex_oapi_paths
+  def ex_oapi_transform_ops(), do: :ex_oapi_transform_ops
   def ex_oapi_schemas(), do: :ex_oapi_schemas
   def ex_oapi_cull_schemas(), do: :ex_oapi_cull_schemas?
   def ex_oapi_skipped_schemas(), do: :ex_oapi_skipped_schemas

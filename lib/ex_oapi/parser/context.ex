@@ -11,6 +11,7 @@ defmodule ExOAPI.Parser.V3.Context do
   ]
 
   @ex_oapi_paths ExOAPI.Parser.ex_oapi_paths()
+  @ex_oapi_transform_ops ExOAPI.Parser.ex_oapi_transform_ops()
   @ex_oapi_schemas ExOAPI.Parser.ex_oapi_schemas()
   @ex_oapi_cull_schemas? ExOAPI.Parser.ex_oapi_cull_schemas()
   @ex_oapi_skipped_schemas ExOAPI.Parser.ex_oapi_skipped_schemas()
@@ -30,14 +31,18 @@ defmodule ExOAPI.Parser.V3.Context do
 
   def new(opts \\ %{}) do
     only_paths = Map.get(opts, :paths, false)
+    transform_ops = Map.get(opts, :transform_ops, false)
 
     Process.put(@ex_oapi_paths, only_paths)
     Process.put(@ex_oapi_schemas, nil)
     Process.put(@ex_oapi_cull_schemas?, false)
     Process.put(@ex_oapi_skipped_schemas, %{})
     Process.put(@ex_oapi_reinsert_schemas, [])
+    Process.put(@ex_oapi_transform_ops, transform_ops)
     %__MODULE__{}
   end
+
+  def get_transform_ops(), do: Process.get(@ex_oapi_transform_ops)
 
   def get_schema_culling(), do: Process.get(@ex_oapi_cull_schemas?)
 

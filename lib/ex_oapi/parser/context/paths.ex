@@ -22,6 +22,7 @@ defmodule ExOAPI.Parser.V3.Context.Paths do
     field(:ref, :string)
     field(:summary, :string)
     field(:description, :string)
+    field(:resource_path, :string)
     embeds_one(:get, Context.Operation)
     embeds_one(:put, Context.Operation)
     embeds_one(:post, Context.Operation)
@@ -38,28 +39,33 @@ defmodule ExOAPI.Parser.V3.Context.Paths do
     with {:ok, translated} <- translate(params, @translations) do
       struct
       |> cast(translated, @list_of_fields)
+      |> put_change(:resource_path, k)
       |> maybe_add_operations(path_info)
-      |> cast_embed(:trace, with: &Context.Operation.map_cast/2)
-      |> cast_embed(:servers, with: &Context.Operation.map_cast/2)
+      |> cast_embed(:trace, with: {Context.Operation, :map_cast, [k]})
+      |> cast_embed(:servers, with: {Context.Operation, :map_cast, [k]})
       |> cast_embed(:parameters, with: &Context.Parameters.map_cast/2)
       |> Context.Schema.maybe_add_ref(k)
     end
   end
 
   defp maybe_add_operations(%Ecto.Changeset{valid?: true} = changeset, []) do
+    resource_path = get_field(changeset, :resource_path)
+
     changeset
-    |> cast_embed(:get, with: &Context.Operation.map_cast/2)
-    |> cast_embed(:put, with: &Context.Operation.map_cast/2)
-    |> cast_embed(:post, with: &Context.Operation.map_cast/2)
-    |> cast_embed(:delete, with: &Context.Operation.map_cast/2)
-    |> cast_embed(:options, with: &Context.Operation.map_cast/2)
-    |> cast_embed(:head, with: &Context.Operation.map_cast/2)
-    |> cast_embed(:patch, with: &Context.Operation.map_cast/2)
+    |> cast_embed(:get, with: {Context.Operation, :map_cast, [resource_path]})
+    |> cast_embed(:put, with: {Context.Operation, :map_cast, [resource_path]})
+    |> cast_embed(:post, with: {Context.Operation, :map_cast, [resource_path]})
+    |> cast_embed(:delete, with: {Context.Operation, :map_cast, [resource_path]})
+    |> cast_embed(:options, with: {Context.Operation, :map_cast, [resource_path]})
+    |> cast_embed(:head, with: {Context.Operation, :map_cast, [resource_path]})
+    |> cast_embed(:patch, with: {Context.Operation, :map_cast, [resource_path]})
   end
 
   defp maybe_add_operations(%Ecto.Changeset{valid?: true} = changeset, ops) do
+    resource_path = get_field(changeset, :resource_path)
+
     Enum.reduce(ops, changeset, fn op, acc ->
-      cast_embed(acc, op, with: &Context.Operation.map_cast/2)
+      cast_embed(acc, op, with: {Context.Operation, :map_cast, [resource_path]})
     end)
   end
 
