@@ -16,7 +16,7 @@ defmodule ExOAPI.Parser.V3.Context.Media do
   typed_embedded_schema do
     field(:example, :string)
     field(:examples, :map)
-    field(:encoding, :map)
+    field(:encoding, Context.Encoding.Map)
     embeds_one(:schema, Context.Schema)
   end
 
