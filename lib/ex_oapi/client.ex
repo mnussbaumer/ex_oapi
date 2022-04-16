@@ -75,7 +75,7 @@ defmodule ExOAPI.Client do
       body: body,
       query: query,
       headers: headers,
-      opts: opts
+      opts: Keyword.put(opts, :ex_oapi, client)
     )
     |> response_handler(client, response_handler)
   end
