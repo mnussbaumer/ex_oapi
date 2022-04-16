@@ -390,7 +390,7 @@ defmodule ExOAPI.Client do
   end
 
   defp validate_request_body(%{outgoing_format: format} = client, body, spec, req) do
-    case (req.required && body) || not req.required do
+    case (req.required && body && true) || not req.required do
       false ->
         add_client_error(client, :missing_required_body)
 
