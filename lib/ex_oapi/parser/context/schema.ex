@@ -77,7 +77,16 @@ defmodule ExOAPI.Parser.V3.Context.Schema do
     field(:max_properties, :integer)
     field(:min_properties, :integer)
     field(:required, {:array, ExOAPI.EctoTypes.FieldAtom})
-    field(:enum, {:array, :string})
+
+    field(
+      :enum,
+      {:array, ExOAPI.EctoTypes.Maybe},
+      types: [
+        {:string, &__MODULE__.maybe_string/2},
+        {:boolean, &__MODULE__.maybe_boolean/2}
+      ]
+    )
+
     field(:type, ExOAPI.EctoTypes.SchemaType)
 
     field(:properties, Context.Schema.Map)
@@ -134,6 +143,7 @@ defmodule ExOAPI.Parser.V3.Context.Schema do
   def map_cast(params, k), do: map_cast(%__MODULE__{}, params, k)
 
   def maybe_boolean(data, _params), do: Ecto.Type.cast(:boolean, data)
+  def maybe_string(data, _params), do: Ecto.Type.cast(:string, data)
 
   def maybe_schema(data, _params, k \\ nil) do
     data

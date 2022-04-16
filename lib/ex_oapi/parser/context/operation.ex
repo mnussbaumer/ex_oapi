@@ -48,7 +48,7 @@ defmodule ExOAPI.Parser.V3.Context.Operation do
     embeds_one(:request_body, Context.RequestBody)
   end
 
-  def map_cast(struct \\ %__MODULE__{}, params) do
+  def map_cast(struct \\ %__MODULE__{}, params, path \\ nil) do
     with {:ok, translated} <- translate(params, @translations) do
       struct
       |> cast(translated, @list_of_fields)
@@ -56,22 +56,28 @@ defmodule ExOAPI.Parser.V3.Context.Operation do
       |> cast_embed(:parameters, with: &Context.Parameters.map_cast/2)
       |> cast_embed(:external_docs, with: &Context.ExternalDoc.map_cast/2)
       |> cast_embed(:request_body, with: &Context.RequestBody.map_cast/2)
-      |> add_module_and_fun()
+      |> add_module_and_fun(path)
     end
   end
 
-  defp add_module_and_fun(changeset) do
-    case false do
-      true -> do_user_transform(changeset, nil)
-      false -> do_base_transform(changeset)
+  defp add_module_and_fun(changeset, path) do
+    case Context.get_transform_ops() do
+      false ->
+        do_base_transform(changeset)
+
+      {m, f} ->
+        apply(m, f, [changeset, path])
+        |> do_base_transform()
+
+      fun when is_function(fun) ->
+        fun.(changeset, path)
+        |> do_base_transform()
     end
   end
-
-  defp do_user_transform(changeset, _transform), do: changeset
 
   defp do_base_transform(changeset) do
     op_id_original = get_change(changeset, :operation_id_original)
-    tags = get_change(changeset, :tags)
+    tags = get_change(changeset, :tags, [])
 
     tags_for_substitution =
       tags

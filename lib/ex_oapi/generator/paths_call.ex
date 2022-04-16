@@ -32,7 +32,7 @@ defmodule ExOAPI.Generator.Paths.Call do
 
         final_required_args =
           required_args
-          |> maybe_add_body_arg(op, ctx)
+          |> maybe_add_body_arg(op, ctx, verb)
 
         final_optional_args =
           optional_args
@@ -67,7 +67,7 @@ defmodule ExOAPI.Generator.Paths.Call do
   defp maybe_merge_params(op, _), do: op
 
   def base_url(
-        %Operation{servers: []},
+        %Operation{servers: _},
         %Context{servers: [%{url: url} | _]}
       ),
       do: url
@@ -134,7 +134,10 @@ defmodule ExOAPI.Generator.Paths.Call do
   def is_security_arg?(%Context.Security{in: in_type}),
     do: in_type in [:header, :query]
 
-  def maybe_add_body_arg(required_args, %Operation{request_body: nil}, _),
+  def maybe_add_body_arg(required_args, _, _, verb) when verb in [:get, :head, :options, :trace],
+    do: required_args
+
+  def maybe_add_body_arg(required_args, %Operation{request_body: nil}, _, _),
     do: required_args
 
   def maybe_add_body_arg(
@@ -144,7 +147,8 @@ defmodule ExOAPI.Generator.Paths.Call do
             content: content
           }
         },
-        %Context{} = ctx
+        %Context{} = ctx,
+        _
       ) do
     case content do
       %{"application/json" => %Context.Media{} = media} ->

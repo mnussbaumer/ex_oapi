@@ -50,7 +50,9 @@ defmodule ExOAPI.Parser.V3.Context.Schema.Map do
         ok
 
       {:error, {k, v, changeset}} ->
-        raise "Error casting Schema: #{inspect(k)} -> #{inspect(v)} resulting in #{inspect(changeset)}"
+        raise "Error casting Schema: #{inspect(k)} -> #{inspect(v)} resulting in #{
+                inspect(changeset)
+              }"
     end
   end
 
@@ -62,8 +64,7 @@ defmodule ExOAPI.Parser.V3.Context.Schema.Map do
   def dump(_), do: :error
 
   @impl Ecto.Type
-  def equal?(a, a), do: true
-  def equal?(_, _), do: false
+  def equal?(a, b), do: a == b
 
   @impl Ecto.Type
   def embed_as(_), do: :self
