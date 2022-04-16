@@ -723,9 +723,6 @@ defmodule ExOAPI.Generator.Helpers do
           type -> {:type, type}
         end
 
-      # IO.inspect(btitle: base_title, schema: schema)
-      # {:array, get_type(type, format)}
-
       %Context.Schema{type: :array} ->
         {:embeds_many, "#{join(base_title, safe_mod_split(title))}"}
 
