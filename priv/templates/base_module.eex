@@ -2,7 +2,7 @@ defmodule <%= @final_title %> do
   <%= for %{name: name, verb: verb, path: path, base_url: base_url, op: op} = call <- @calls do %>
       <%= ExOAPI.Generator.Helpers.build_docs_for_op(op) %>
       <%= ExOAPI.Generator.Helpers.maybe_build_opts_type(call, @optional_args, name) %>
-      @spec <%= name %>(<%= ExOAPI.Generator.Helpers.build_specs(call, @ctx, @schemas_title, @optional_args, name) %>) :: {:ok, any()} | {:error, any()}
+      @spec <%= name %>(<%= ExOAPI.Generator.Helpers.build_specs(call, @ctx, @schemas_title, @optional_args, name) %>) :: {:ok, <%= ExOAPI.Generator.Helpers.build_response_spec(call, @ctx, @schemas_title) %>} | {:error, any()}
       def <%= name %>(<%= ExOAPI.Generator.Helpers.fun_args(call, @optional_args) %>) do
       	      client
 	      |> ExOAPI.Client.set_module(<%= @title %>)
