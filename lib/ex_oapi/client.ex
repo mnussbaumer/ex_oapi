@@ -16,16 +16,18 @@ defmodule ExOAPI.Client do
     :body,
     :adapter,
     :module,
+    :oapi_op,
     opts: [],
     query: [],
     headers: [],
     replacements: [],
     errors: [],
+    strict_responses: false,
     outgoing_format: "application/json",
     response_handler: &__MODULE__.response_handler/2,
     middleware: [
       {Tesla.Middleware.FollowRedirects, max_redirects: 5},
-      {Tesla.Middleware.Timeout, timeout: 5_000}
+      {Tesla.Middleware.Timeout, timeout: 15_000}
     ]
   ]
 
@@ -36,11 +38,13 @@ defmodule ExOAPI.Client do
           body: any(),
           adapter: {any(), Keyword.t()},
           module: module() | nil,
+          oapi_op: Context.Operation.t(),
           opts: Keyword.t(),
           query: Keyword.t(),
           headers: list({String.t(), String.t()}),
           replacements: list({String.t(), String.t()}),
           errors: list(any()),
+          strict_responses: boolean(),
           outgoing_format: String.t(),
           response_handler: function() | mfa(),
           middleware: middleware()
@@ -55,7 +59,6 @@ defmodule ExOAPI.Client do
           query: query,
           headers: headers,
           body: body,
-          base_url: base_url,
           path: path,
           replacements: replacements,
           response_handler: response_handler,
@@ -63,7 +66,10 @@ defmodule ExOAPI.Client do
           adapter: adapter
         } = client
       ) do
+    client = add_op_details(client)
+    base_url = maybe_create_url_from_servers(client)
     url = replace_path_fragments(replacements, "#{base_url}#{path}")
+    middleware = [{Tesla.Middleware.RequestResponse, ex_oapi: client} | middleware]
 
     case adapter do
       nil -> Tesla.client(middleware)
@@ -75,10 +81,30 @@ defmodule ExOAPI.Client do
       body: body,
       query: query,
       headers: headers,
-      opts: opts
+      opts: Keyword.put(opts, :ex_oapi, client)
     )
     |> response_handler(client, response_handler)
   end
+
+  def maybe_create_url_from_servers(%ExOAPI.Client{
+        base_url: base_url,
+        oapi_op: %Operation{servers: [%Context.Server{url: server_url} | _] = servers}
+      })
+      when is_binary(server_url) do
+    case check_url_in_servers(base_url, servers) do
+      true ->
+        base_url
+
+      false ->
+        server_url
+    end
+  end
+
+  def maybe_create_url_from_servers(%ExOAPI.Client{base_url: base_url}),
+    do: base_url
+
+  def check_url_in_servers(base_url, servers),
+    do: Enum.any?(servers, &(&1.url == base_url))
 
   def response_handler(response, client, nil), do: response_handler(response, client)
 
@@ -93,13 +119,12 @@ defmodule ExOAPI.Client do
 
   def response_handler(
         {:ok, %Tesla.Env{body: body, status: status}},
-        %{path: path, module: module, method: method} = _client
+        %{oapi_op: op, module: module, strict_responses: strict} = _client
       ) do
     with spec_module <- Module.concat(module, ExOAPI.Spec),
          {_, %Context{} = spec} <- {:spec, spec_module.spec()},
-         {_, %Context.Paths{} = path_def} <- {:path, Map.get(spec.paths, path)},
-         {_, %Operation{responses: resp_spec}} <- {:req, Map.get(path_def, method)} do
-      maybe_convert_response("#{status}", body, resp_spec, spec, spec_module)
+         {_, %Operation{responses: resp_spec}} <- {:req, op} do
+      maybe_convert_response("#{status}", body, resp_spec, spec, spec_module, strict)
     else
       _ -> {:ok, body}
     end
@@ -107,7 +132,7 @@ defmodule ExOAPI.Client do
 
   def response_handler(response, _client), do: response
 
-  defp maybe_convert_response(status, body, resp_spec, spec, module)
+  defp maybe_convert_response(status, body, resp_spec, spec, module, strict)
        when is_map_key(resp_spec, status) or is_map_key(resp_spec, "default") do
     Map.get(resp_spec, status, Map.get(resp_spec, "default"))
     |> case do
@@ -118,7 +143,8 @@ defmodule ExOAPI.Client do
               {:cont, acc}
 
             resp_spec ->
-              {:halt, __MODULE__.Responses.convert_response(body, resp_spec, spec, module)}
+              {:halt,
+               __MODULE__.Responses.convert_response(body, resp_spec, spec, module, strict)}
           end
         end)
 
@@ -127,7 +153,7 @@ defmodule ExOAPI.Client do
     end
   end
 
-  defp maybe_convert_response(_, body, _, _, _), do: {:ok, body}
+  defp maybe_convert_response(_, body, _, _, _, _), do: {:ok, body}
 
   @path_regex ~r/\((?<regex_start>.+?)(?<replacement>\{.+?\})(?<regex_end>.+?)\)(?:\/|$)|(?<only_interpolation>\{.+?\})(?:\/|$)/u
   def replace_path_fragments(replacements, url) do
@@ -378,71 +404,18 @@ defmodule ExOAPI.Client do
 
   @doc false
   @spec add_body(__MODULE__.t(), String.t() | map()) :: __MODULE__.t()
-  def add_body(%{path: path, module: module, method: method} = client, body) do
+  def add_body(%__MODULE__{} = client, body),
+    do: %{client | body: body}
+
+  defp add_op_details(%{path: path, module: module, method: method} = client) do
     with spec_module <- Module.concat(module, ExOAPI.Spec),
          {_, %Context{} = spec} <- {:spec, spec_module.spec()},
          {_, %Context.Paths{} = path_def} <- {:path, Map.get(spec.paths, path)},
-         {_, %Operation{request_body: req}} <- {:req, Map.get(path_def, method)} do
-      validate_request_body(client, body, spec, req)
+         {_, %Operation{} = op} <- {:req, Map.get(path_def, method)} do
+      %{client | oapi_op: op}
     else
-      {_, _} -> %{client | body: body}
+      {_, _} -> client
     end
-  end
-
-  defp validate_request_body(%{outgoing_format: format} = client, body, spec, req) do
-    case (req.required && body && true) || not req.required do
-      false ->
-        add_client_error(client, :missing_required_body)
-
-      true ->
-        with content <- Map.get(req, :content, %{}),
-             {_, %Context.Media{schema: schema}} <- {:outgoing, Map.get(content, format)},
-             {_, %Context.Schema{} = schema} <- {:schema, get_schema(schema, spec)},
-             {_, true} <- {:valid?, validate_schema(client, body, schema, req.required)} do
-          %{client | body: body}
-        else
-          {:valid?, {:error, errors}} -> add_client_error(client, errors)
-          {_, _} -> %{client | body: body}
-        end
-    end
-  end
-
-  defp get_schema(%Context.Schema{ref: nil} = schema, _), do: schema
-
-  defp get_schema(%Context.Schema{ref: ref}, ctx),
-    do: ExOAPI.Generator.Helpers.extract_ref(ref, ctx)
-
-  defp validate_schema(_, body, _, false), do: body
-
-  defp validate_schema(
-         %{outgoing_format: "application/json", module: module} = _client,
-         %{} = body,
-         %{title: title} = _schema,
-         true
-       ) do
-    schema_module = Module.concat(module, title)
-
-    if function_exported?(schema_module, :changeset, 2) do
-      body
-      |> schema_module.changeset()
-      |> Ecto.Changeset.apply_action(:insert)
-      |> case do
-        {:ok, _} -> true
-        {:error, changeset} -> {:error, changeset.errors}
-      end
-    else
-      body
-    end
-  end
-
-  defp validate_schema(_, body, _, _), do: body
-
-  defp add_client_error(%{errors: errors} = client, new_errors) when is_list(new_errors) do
-    %{client | errors: Enum.concat(errors, new_errors)}
-  end
-
-  defp add_client_error(%{errors: errors} = client, new_error) do
-    %{client | errors: Enum.concat(errors, [new_error])}
   end
 
   @doc """

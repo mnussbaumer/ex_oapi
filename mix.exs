@@ -43,6 +43,7 @@ defmodule ExOAPI.MixProject do
       {:typed_ecto_schema, "~> 0.3"},
       {:tesla, "~> 1.4"},
       {:jason, "~> 1.2"},
+      {:plug, "~> 1.13"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false}
     ]

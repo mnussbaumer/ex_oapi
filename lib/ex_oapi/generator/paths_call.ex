@@ -150,27 +150,16 @@ defmodule ExOAPI.Generator.Paths.Call do
         %Context{} = ctx,
         _
       ) do
-    case content do
-      %{"application/json" => %Context.Media{} = media} ->
-        [%{body: make_body_arg(media, ctx), in: :body} | required_args]
+    Enum.reduce_while(content, [], fn
+      {k, %Context.Media{} = media}, acc ->
+        {:cont, [{k, make_body_arg(media, ctx)} | acc]}
 
-      %{"image/png" => %Context.Media{} = media} ->
-        [%{body: make_body_arg(media, ctx), in: :body} | required_args]
-
-      %{"multipart/form-data" => %Context.Media{} = media} ->
-        [%{body: make_body_arg(media, ctx), in: :body} | required_args]
-
-      %{"application/octet-stream" => %Context.Media{} = media} ->
-        [%{body: make_body_arg(media, ctx), in: :body} | required_args]
-
-      content ->
-        Enum.reduce_while(content, required_args, fn
-          {_k, %Context.Media{} = media}, _acc ->
-            {:halt, [%{body: make_body_arg(media, ctx), in: :body} | required_args]}
-
-          _, acc ->
-            {:cont, acc}
-        end)
+      _, acc ->
+        {:cont, acc}
+    end)
+    |> case do
+      [_ | _] = body_encodings -> [%{body: body_encodings, in: :body} | required_args]
+      [] -> required_args
     end
   end
 

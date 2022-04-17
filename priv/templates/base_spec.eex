@@ -13,20 +13,34 @@ defmodule <%= @title %>.ExOAPI.Spec do
   @spec spec() :: Context.t()
   def spec(), do: %Context{
     openapi: <%= inspect(@ctx.openapi, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    <% :erlang.garbage_collect() %>
     paths: <%= inspect(@ctx.paths, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    <% :erlang.garbage_collect() %>
     security: <%= inspect(@ctx.security, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    <% :erlang.garbage_collect() %>
     info: <%= inspect(@ctx.info, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    <% :erlang.garbage_collect() %>
     servers: <%= inspect(@ctx.servers, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+    <% :erlang.garbage_collect() %>
     components: %Context.Components{
       schemas: <%= inspect(@ctx.components.schemas, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
       responses: <%= inspect(@ctx.components.responses, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
       parameters: <%= inspect(@ctx.components.parameters, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
       examples: <%= inspect(@ctx.components.examples, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
       request_bodies: <%= inspect(@ctx.components.request_bodies, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
       headers: <%= inspect(@ctx.components.headers, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
       security_schemes: <%= inspect(@ctx.components.security_schemes, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
       links: <%= inspect(@ctx.components.links, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
       callbacks: <%= inspect(@ctx.components.callbacks, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
+      <% :erlang.garbage_collect() %>
     }
   }
 end
