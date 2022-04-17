@@ -168,15 +168,13 @@ defmodule ExOAPI.Generator.Helpers do
         {"multipart/form-data", schema}, {acc, has_map?, has_any?} ->
           {["Tesla.Multipart.t()" | acc], has_map?, has_any?}
 
-        {_encoding, schema}, {acc, has_map?, has_any?} ->
+        {encoding, schema}, {acc, has_map?, has_any?} ->
           with {_, true} <- {:is_map, is_map(schema)},
                schema_title when is_binary(schema_title) <- Map.get(schema, :title),
                %Context.Schema{} <- Map.get(ctx.components.schemas, schema_title) do
             {
               [
-                "#{join(base_title, safe_mod_split(schema_title))}.t()#{
-                  if has_map?, do: "", else: " | map()"
-                }"
+                "#{join(base_title, safe_mod_split(schema_title))}.t()#{if has_map?, do: "", else: " | map()"}"
                 | acc
               ],
               true,
@@ -187,12 +185,17 @@ defmodule ExOAPI.Generator.Helpers do
               {["any()" | acc], has_map?, true}
 
             _ ->
-              {["map()" | acc], true, has_any?}
+              spec =
+                build_specification(encoding, schema, ctx.components.schemas, base_title)
+                |> IO.iodata_to_binary()
+
+              {[spec <> if(has_map?, do: "", else: " | map()") | acc], true, has_any?}
           end
       end)
       |> elem(0)
       |> Enum.join(" | ")
 
+    :erlang.garbage_collect()
     "body :: #{type}"
   end
 
@@ -524,6 +527,134 @@ defmodule ExOAPI.Generator.Helpers do
 
   def is_required?(name, required),
     do: name in required
+
+  def maybe_additional_props(
+        _encoding,
+        _props,
+        _schemas,
+        _base_title
+      ) do
+    ""
+  end
+
+  def build_specification(
+        encoding,
+        %Context.Schema{any_of: [_ | _] = any_of},
+        schemas,
+        base_title
+      ) do
+    Enum.reduce(any_of, [], fn entry, acc ->
+      [build_specification(encoding, entry, schemas, base_title) | acc]
+    end)
+    |> Enum.uniq()
+    |> Enum.reject(fn x -> x == ~s(:"") end)
+    |> Enum.join(" | ")
+  end
+
+  def build_specification(
+        encoding,
+        %Context.Schema{ref: ref},
+        schemas,
+        base_title
+      )
+      when is_binary(ref) do
+    case Map.get(schemas, extract_schema_ref(ref)) do
+      %Context.Schema{} = schema ->
+        with schema_title when is_binary(schema_title) <- Map.get(schema, :title),
+             %Context.Schema{} <- Map.get(schemas, schema_title) do
+          "#{join(base_title, safe_mod_split(schema_title))}.t()"
+        else
+          _ ->
+            "map()"
+        end
+
+      nil ->
+        "map()"
+    end
+  end
+
+  def build_specification(
+        encoding,
+        %Context.Schema{type: :object, properties: %{} = props, additional_properties: add_props},
+        schemas,
+        base_title
+      ) do
+    [
+      "%{",
+      maybe_additional_props(encoding, add_props, schemas, base_title),
+      Enum.reduce(props, [], fn {_, v}, acc ->
+        [
+          ", ",
+          v.field_name,
+          " => ",
+          build_specification(encoding, v, schemas, base_title),
+          "" | acc
+        ]
+      end)
+      |> case do
+        [", " | t] -> t
+        t -> t
+      end
+      | "}"
+    ]
+  end
+
+  def build_specification(
+        encoding,
+        %Context.Schema{type: :object, properties: nil, additional_properties: add_props},
+        schemas,
+        base_title
+      ) do
+    "map()"
+  end
+
+  def build_specification(
+        encoding,
+        %Context.Schema{type: :array, items: item},
+        schemas,
+        base_title
+      ) do
+    ["[", build_specification(encoding, item, schemas, base_title), "]"]
+  end
+
+  def build_specification(
+        encoding,
+        %Context.Schema{enum: [_ | _] = enum, type: :string},
+        _,
+        _
+      ) do
+    ["String.t()" | Enum.map(enum, fn entry -> ":#{inspect(entry)}" end)]
+    |> Enum.uniq()
+    |> Enum.reject(fn x -> x == ~s(:"") end)
+    |> Enum.join(" | ")
+  end
+
+  def build_specification(
+        encoding,
+        %Context.Schema{type: :string},
+        _,
+        _
+      ),
+      do: "String.t()"
+
+  def build_specification(
+        encoding,
+        %Context.Schema{type: :number},
+        _,
+        _
+      ),
+      do: "number()"
+
+  def build_specification(
+        encoding,
+        %Context.Schema{type: :integer},
+        _,
+        _
+      ),
+      do: "integer()"
+
+  def build_specification(encoding, %Context.Schema{type: :boolean}, _, _),
+    do: "boolean()"
 
   def build_schema_field(
         %Context.Schema{type: :string, enum: nil, format: "date-time", field_name: field_name},
