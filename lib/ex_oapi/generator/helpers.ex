@@ -162,36 +162,80 @@ defmodule ExOAPI.Generator.Helpers do
        |> Enum.join(", ")) <> "}"
   end
 
+  def build_response_spec(
+        %Call{op: %Context.Operation{responses: responses}},
+        ctx,
+        base_title
+      )
+      when is_map(responses) and map_size(responses) >= 1 do
+    all_types =
+      Enum.reduce(responses, {[], false, false}, fn {_k, response}, acc ->
+        case Map.get(response, :content) do
+          %{} = content ->
+            Enum.reduce(content, acc, fn
+              {encoding, %Context.Media{schema: schema}}, inner_acc ->
+                build_types_from_content_schemas([{encoding, schema}], ctx, base_title, inner_acc)
+
+              _, inner_acc ->
+                inner_acc
+            end)
+
+          nil ->
+            acc
+        end
+      end)
+      |> case do
+        {[], _, _} ->
+          "any()"
+
+        {types, _, _} ->
+          types
+          |> Enum.uniq()
+          |> Enum.join(" | ")
+      end
+
+    :erlang.garbage_collect()
+
+    all_types
+  end
+
+  def build_response_spec(_, _, _), do: "any()"
+
+  def build_types_from_content_schemas(schemas, ctx, base_title, outer_acc \\ {[], false, false}) do
+    Enum.reduce(schemas, outer_acc, fn
+      {"multipart/form-data", _schema}, {acc, has_map?, has_any?} ->
+        {["Tesla.Multipart.t()" | acc], has_map?, has_any?}
+
+      {encoding, schema}, {acc, has_map?, has_any?} ->
+        with {_, true} <- {:is_map, is_map(schema)},
+             schema_title when is_binary(schema_title) <- Map.get(schema, :title),
+             %Context.Schema{} <- Map.get(ctx.components.schemas, schema_title) do
+          {
+            [
+              "#{join(base_title, safe_mod_split(schema_title))}.t()#{if has_map?, do: "", else: " | map()"}"
+              | acc
+            ],
+            true,
+            has_any?
+          }
+        else
+          {:is_map, _} when not has_any? ->
+            {["any()" | acc], has_map?, true}
+
+          _ ->
+            spec =
+              build_specification(encoding, schema, ctx.components.schemas, base_title)
+              |> IO.iodata_to_binary()
+
+            :erlang.garbage_collect()
+            {[spec <> if(has_map?, do: "", else: " | map()") | acc], true, has_any?}
+        end
+    end)
+  end
+
   def add_type_param(%{in: :body, body: schemas}, _, ctx, base_title) do
     type =
-      Enum.reduce(schemas, {[], false, false}, fn
-        {"multipart/form-data", schema}, {acc, has_map?, has_any?} ->
-          {["Tesla.Multipart.t()" | acc], has_map?, has_any?}
-
-        {encoding, schema}, {acc, has_map?, has_any?} ->
-          with {_, true} <- {:is_map, is_map(schema)},
-               schema_title when is_binary(schema_title) <- Map.get(schema, :title),
-               %Context.Schema{} <- Map.get(ctx.components.schemas, schema_title) do
-            {
-              [
-                "#{join(base_title, safe_mod_split(schema_title))}.t()#{if has_map?, do: "", else: " | map()"}"
-                | acc
-              ],
-              true,
-              has_any?
-            }
-          else
-            {:is_map, _} when not has_any? ->
-              {["any()" | acc], has_map?, true}
-
-            _ ->
-              spec =
-                build_specification(encoding, schema, ctx.components.schemas, base_title)
-                |> IO.iodata_to_binary()
-
-              {[spec <> if(has_map?, do: "", else: " | map()") | acc], true, has_any?}
-          end
-      end)
+      build_types_from_content_schemas(schemas, ctx, base_title)
       |> elem(0)
       |> Enum.join(" | ")
 
@@ -552,7 +596,7 @@ defmodule ExOAPI.Generator.Helpers do
   end
 
   def build_specification(
-        encoding,
+        _encoding,
         %Context.Schema{ref: ref},
         schemas,
         base_title
@@ -600,10 +644,10 @@ defmodule ExOAPI.Generator.Helpers do
   end
 
   def build_specification(
-        encoding,
-        %Context.Schema{type: :object, properties: nil, additional_properties: add_props},
-        schemas,
-        base_title
+        _encoding,
+        %Context.Schema{type: :object, properties: nil, additional_properties: _add_props},
+        _schemas,
+        _base_title
       ) do
     "map()"
   end
@@ -618,7 +662,7 @@ defmodule ExOAPI.Generator.Helpers do
   end
 
   def build_specification(
-        encoding,
+        _encoding,
         %Context.Schema{enum: [_ | _] = enum, type: :string},
         _,
         _
@@ -630,7 +674,7 @@ defmodule ExOAPI.Generator.Helpers do
   end
 
   def build_specification(
-        encoding,
+        _encoding,
         %Context.Schema{type: :string},
         _,
         _
@@ -638,7 +682,7 @@ defmodule ExOAPI.Generator.Helpers do
       do: "String.t()"
 
   def build_specification(
-        encoding,
+        _encoding,
         %Context.Schema{type: :number},
         _,
         _
@@ -646,15 +690,20 @@ defmodule ExOAPI.Generator.Helpers do
       do: "number()"
 
   def build_specification(
-        encoding,
+        _encoding,
         %Context.Schema{type: :integer},
         _,
         _
       ),
       do: "integer()"
 
-  def build_specification(encoding, %Context.Schema{type: :boolean}, _, _),
-    do: "boolean()"
+  def build_specification(
+        _encoding,
+        %Context.Schema{type: :boolean},
+        _,
+        _
+      ),
+      do: "boolean()"
 
   def build_schema_field(
         %Context.Schema{type: :string, enum: nil, format: "date-time", field_name: field_name},

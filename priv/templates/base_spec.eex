@@ -10,6 +10,7 @@ defmodule <%= @title %>.ExOAPI.Spec do
   @spec schemas() :: Context.Schema.Map.t()
   def schemas(), do: spec().components.schemas
 
+  @doc false
   @spec spec() :: Context.t()
   def spec(), do: %Context{
     openapi: <%= inspect(@ctx.openapi, limit: :infinity, printable_limit: :infinity, charlists: :as_lists, structs: false) %>,
