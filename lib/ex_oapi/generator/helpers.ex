@@ -162,16 +162,36 @@ defmodule ExOAPI.Generator.Helpers do
        |> Enum.join(", ")) <> "}"
   end
 
-  def add_type_param(%{in: :body, body: body}, _, ctx, base_title) do
+  def add_type_param(%{in: :body, body: schemas}, _, ctx, base_title) do
     type =
-      with {_, true} <- {:is_map, is_map(body)},
-           schema_title when is_binary(schema_title) <- Map.get(body, :title),
-           %Context.Schema{} <- Map.get(ctx.components.schemas, schema_title) do
-        "#{join(base_title, safe_mod_split(schema_title))}.t() | map()"
-      else
-        {:is_map, _} -> "any()"
-        _ -> "map()"
-      end
+      Enum.reduce(schemas, {[], false, false}, fn
+        {"multipart/form-data", schema}, {acc, has_map?, has_any?} ->
+          {["Tesla.Multipart.t()" | acc], has_map?, has_any?}
+
+        {_encoding, schema}, {acc, has_map?, has_any?} ->
+          with {_, true} <- {:is_map, is_map(schema)},
+               schema_title when is_binary(schema_title) <- Map.get(schema, :title),
+               %Context.Schema{} <- Map.get(ctx.components.schemas, schema_title) do
+            {
+              [
+                "#{join(base_title, safe_mod_split(schema_title))}.t()#{
+                  if has_map?, do: "", else: " | map()"
+                }"
+                | acc
+              ],
+              true,
+              has_any?
+            }
+          else
+            {:is_map, _} when not has_any? ->
+              {["any()" | acc], has_map?, true}
+
+            _ ->
+              {["map()" | acc], true, has_any?}
+          end
+      end)
+      |> elem(0)
+      |> Enum.join(" | ")
 
     "body :: #{type}"
   end
@@ -289,6 +309,9 @@ defmodule ExOAPI.Generator.Helpers do
             [", ", name | acc]
 
           {:any_of, _} ->
+            [", ", name | acc]
+
+          {:type, _} ->
             [", ", name | acc]
 
           _ ->
@@ -447,6 +470,9 @@ defmodule ExOAPI.Generator.Helpers do
           {:any_of, _} ->
             acc
 
+          {:type, _} ->
+            acc
+
           _ ->
             [
               "|> cast_embed(#{field_name}#{maybe_required_embed(field_name, required)})"
@@ -476,7 +502,7 @@ defmodule ExOAPI.Generator.Helpers do
             acc
 
           _error ->
-            ""
+            acc
         end
 
       {_, _}, acc ->
@@ -574,6 +600,9 @@ defmodule ExOAPI.Generator.Helpers do
     case type_of_schema(item, schemas, base_title) do
       {:array, :enum, enum} ->
         "field #{field_name}, {:array, Ecto.Enum}, values: #{enum}"
+
+      {:type, type} ->
+        "field #{field_name}, {:array, #{type}}"
 
       {:array, type} ->
         "field #{field_name}, {:array, #{type}}"
