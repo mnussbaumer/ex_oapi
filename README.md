@@ -33,7 +33,7 @@ Add `ex_oapi` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ex_oapi, "~> 0.1.0"}
+    {:ex_oapi, "~> 0.1.2"}
   ]
 end
 ```
