@@ -25,7 +25,7 @@ defmodule ExOAPI.Parser.V3.Context.Security do
   @primary_key false
 
   typed_embedded_schema do
-    field(:type, ExOAPI.EctoTypes.Security, null: false)
+    field(:type, ExOAPI.EctoTypes.Security)
     field(:description, :string)
     field(:name, :string)
     field(:in, ExOAPI.EctoTypes.ParameterIn)

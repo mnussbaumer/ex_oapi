@@ -4,7 +4,7 @@ defmodule ExOAPI.MixProject do
   def project do
     [
       app: :ex_oapi,
-      version: "0.1.3",
+      version: "0.1.4",
       elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -39,7 +39,7 @@ defmodule ExOAPI.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps,
     do: [
-      {:ecto, "~> 3.7.0"},
+      {:ecto, "~> 3.8"},
       {:typed_ecto_schema, "~> 0.3"},
       {:tesla, "~> 1.4"},
       {:jason, "~> 1.2"},
