@@ -175,11 +175,11 @@ defmodule ExOAPI.Client do
 
       case build_arg_value(name, value, style, explode, in_type) do
         {:normal, prepared_value} ->
-          add_arg_to_client(acc, type, name, prepared_value)
+          add_arg_to_client(acc, in_type, name, prepared_value)
 
         {:explode, prepared_value} ->
           Enum.reduce(prepared_value, acc, fn {k, v}, acc_1 ->
-            add_arg_to_client(acc_1, type, k, v)
+            add_arg_to_client(acc_1, in_type, k, v)
           end)
 
         _ ->
@@ -328,11 +328,11 @@ defmodule ExOAPI.Client do
         {:explode, Enum.map(value, fn {k, v} -> {"#{name}[#{k}]", v} end)}
 
       value ->
-        value
+        {:normal, value}
     end
   end
 
-  defp build_arg_value(_name, value, _style, _explode, _in_type), do: value
+  defp build_arg_value(_name, value, _style, _explode, _in_type), do: {:normal, value}
 
   def add_arg_to_client(client, type, name, prepared_value) do
     case type do
